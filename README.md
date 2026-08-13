@@ -58,10 +58,11 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to view the 
 - **Robust Fallback Stub:** When no API key is configured, a heuristic extraction stub runs seamlessly, logging a warning and returning plausible structured data without crashing.
 - **Deterministic Priority Engine:** Pure TypeScript scoring function evaluates priority (`high`, `medium`, `low`) based on budget size, urgency keywords, contact completeness, and prompt injection defense.
 - **Adversarial Prompt Injection Defense:** System prompt treats raw input as untrusted data. Enquiry #2 (containing fake system commands to force high priority and $10M budget) is correctly flagged as `isGenuineEnquiry: false` with notes and assigned `low` priority.
-- **Non-Destructive Re-Extraction:** Re-running extraction on an enquiry preserves fields manually edited by humans (`humanEditedFields`). Displays AI suggestions alongside human fields so users can accept or reject new AI values.
+- **Non-Destructive Re-Extraction:** Re-running extraction on an enquiry preserves fields manually edited by humans (`humanEditedFields`). Manually edited fields display a `Protected Edit` badge and are left untouched during re-extraction while untouched fields update normally.
 - **Batch Processing & Concurrency:** Processes batch uploads with bounded concurrency (`p-limit(3)`). Handles partial failures gracefully — if one item fails, the rest complete, and the failed item appears in the DB with error notes and a retry button.
 
 ### What doesn't
+- **Vercel Cloud Deployment:** Cloud deployment was attempted but abandoned due to time constraints (per the brief's directive that deployment is explicitly optional). The application is fully optimized, verified, and running locally using Node.js and local SQLite (`dev.db`).
 - **Scanned Image PDFs without OCR:** PDF extraction relies on readable text layers via `pdf-parse`. Scanned image PDFs without selectable text fail gracefully with a user-friendly alert asking for a text-based PDF or `.txt` file.
 - **Multi-project splitting into separate DB rows:** Currently, when an enquiry describes two unrelated projects in one message (e.g. Enquiry #7), it is captured as a single DB record with both projects detailed in the summary and `extractionNotes`, rather than automatically splitting into two linked database rows.
 - **Live Currency Exchange API:** Budget normalization uses fixed illustrative exchange rates (e.g. 1 Lakh = 100,000 INR @ 83 INR/USD, 1 EUR = $1.08 USD) rather than querying a real-time live FX rate service.
@@ -102,8 +103,8 @@ Here is a breakdown of key architectural decisions made on edge cases:
 3. **Audit Snapshot:** A JSON snapshot of the state prior to re-extraction is saved in `previousExtraction`.
 4. **Edit Protection:** The system checks `humanEditedFields`:
    - For fields **not** in `humanEditedFields`, the database is updated with the new AI values.
-   - For fields **in** `humanEditedFields`, the human's value is **preserved** on the record, while the new AI value is returned as `aiSuggestions`.
-5. **AI Suggestions & Audit Log:** The UI displays an **"Accept AI Suggestion"** button for human-edited fields, and every edit/re-extraction event is recorded in the **Enquiry Audit History Log** (`EnquiryHistoryEvent`).
+   - For fields **in** `humanEditedFields`, the human's value is **preserved** on the record and left untouched, with a visible `Protected Edit` badge on the UI.
+5. **Audit History Log:** Every manual edit and re-extraction event is recorded in the **Enquiry Audit History Log** (`EnquiryHistoryEvent`).
 6. **Priority Re-scoring:** Priority is automatically re-computed based on the effective values (unless priority itself was manually overridden).
 
 ---
