@@ -16,12 +16,14 @@
     "lucide-react": "^0.475.0",
     "next": "^14.2.24",
     "p-limit": "^6.0.0",
+    "pdf-parse": "^2.4.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.5.5"
   },
   "devDependencies": {
     "@types/node": "^20.17.19",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "autoprefixer": "^10.4.20",
