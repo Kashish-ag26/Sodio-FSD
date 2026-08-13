@@ -43,9 +43,8 @@ export default function EnquiryDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Re-extraction & AI suggestions state
+  // Re-extraction state
   const [isReExtracting, setIsReExtracting] = useState(false)
-  const [aiSuggestions, setAiSuggestions] = useState<Record<string, any> | null>(null)
 
   // Draft editing state for explicitly tracking dirty unsaved edits
   const [draft, setDraft] = useState<Partial<Enquiry>>({})
@@ -159,12 +158,6 @@ export default function EnquiryDetailPage() {
 
       setEnquiry(result)
       setDraft(result)
-
-      if (result.aiSuggestions && Object.keys(result.aiSuggestions).length > 0) {
-        setAiSuggestions(result.aiSuggestions)
-      } else {
-        setAiSuggestions(null)
-      }
     } catch (err: any) {
       alert(`Re-extraction error: ${err.message}`)
     } finally {
@@ -179,40 +172,6 @@ export default function EnquiryDetailPage() {
       setShowUnsavedWarningModal(true)
     } else {
       router.push('/enquiries')
-    }
-  }
-
-  // Accept AI Suggestion for Human-Edited Field
-  const handleAcceptAiSuggestion = async (fieldName: keyof Enquiry, suggestedValue: any) => {
-    setIsSaving(true)
-    try {
-      const updatedHumanEdited = (enquiry?.humanEditedFields || []).filter((f) => f !== fieldName)
-
-      const payload = {
-        [fieldName]: suggestedValue,
-        humanEditedFields: updatedHumanEdited,
-      }
-
-      const res = await fetch(`/api/enquiries/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      if (!res.ok) throw new Error('Failed to accept AI suggestion')
-      const updated = await res.json()
-      setEnquiry(updated)
-      setDraft(updated)
-
-      if (aiSuggestions) {
-        const nextSuggestions = { ...aiSuggestions }
-        delete nextSuggestions[fieldName as string]
-        setAiSuggestions(Object.keys(nextSuggestions).length > 0 ? nextSuggestions : null)
-      }
-    } catch (err: any) {
-      alert(`Error accepting suggestion: ${err.message}`)
-    } finally {
-      setIsSaving(false)
     }
   }
 
@@ -328,35 +287,6 @@ export default function EnquiryDetailPage() {
           <p className="text-xs text-rose-200/90 pl-7">
             The extraction model detected embedded system commands in the source raw text attempting to override triage scoring rules. This message has been marked as <strong>non-genuine</strong> and automatically assigned <strong>low priority</strong>.
           </p>
-        </div>
-      )}
-
-      {/* AI Suggestions Callout (if Re-extracted over Human Edited Fields) */}
-      {aiSuggestions && Object.keys(aiSuggestions).length > 0 && (
-        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-2">
-          <div className="flex items-center space-x-2 font-semibold text-xs text-amber-300">
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            <span>Re-extraction Complete — AI Suggestions Available</span>
-          </div>
-          <p className="text-xs text-amber-200/80">
-            Re-extraction updated untouched fields, but preserved your manually edited fields. Review new AI suggestions below:
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-            {Object.entries(aiSuggestions).map(([fKey, suggestVal]) => (
-              <div key={fKey} className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 flex items-center justify-between text-xs">
-                <div>
-                  <span className="text-slate-400 capitalize">{fKey}: </span>
-                  <strong className="text-slate-200">{String(suggestVal)}</strong>
-                </div>
-                <button
-                  onClick={() => handleAcceptAiSuggestion(fKey as keyof Enquiry, suggestVal)}
-                  className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-semibold"
-                >
-                  Accept AI Suggestion
-                </button>
-              </div>
-            ))}
-          </div>
         </div>
       )}
 
@@ -678,7 +608,7 @@ export default function EnquiryDetailPage() {
             </div>
           </div>
 
-          {/* Component 2: Edit History Log Section */}
+          {/* Enquiry Audit History Log Section */}
           <div className="glass-panel p-5 rounded-2xl border-slate-800 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-sm font-bold text-slate-200 flex items-center space-x-2">
