@@ -156,3 +156,42 @@ export async function POST(request: Request) {
     )
   }
 }
+
+// DELETE /api/enquiries - Bulk delete selected enquiries or clear all enquiries
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json()
+    const { ids, deleteAll } = body
+
+    if (deleteAll === true) {
+      const result = await db.enquiry.deleteMany({})
+      return NextResponse.json({
+        success: true,
+        message: 'All enquiries deleted successfully',
+        deletedCount: result.count,
+      })
+    }
+
+    if (Array.isArray(ids) && ids.length > 0) {
+      const result = await db.enquiry.deleteMany({
+        where: { id: { in: ids } },
+      })
+      return NextResponse.json({
+        success: true,
+        message: `${result.count} enquiries deleted successfully`,
+        deletedCount: result.count,
+      })
+    }
+
+    return NextResponse.json(
+      { error: 'Invalid request payload: specify ids array or deleteAll: true' },
+      { status: 400 }
+    )
+  } catch (error: any) {
+    console.error('[API /api/enquiries DELETE] Error:', error)
+    return NextResponse.json(
+      { error: 'Failed to bulk delete enquiries', details: error?.message },
+      { status: 500 }
+    )
+  }
+}

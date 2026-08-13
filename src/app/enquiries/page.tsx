@@ -21,6 +21,8 @@ import {
   FileCode,
   FileCheck,
   Sparkles,
+  CheckSquare,
+  Square,
 } from 'lucide-react'
 import type { Enquiry, Status } from '@/types/enquiry'
 import {
@@ -53,8 +55,17 @@ export default function EnquiryConsolePage() {
   const [sortBy, setSortBy] = useState<string>('receivedAt')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
-  // Selection
+  // Row Selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // Bulk Delete Modal states
+  const [showDeleteSelectedModal, setShowDeleteSelectedModal] = useState(false)
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false)
+
+  // Delete All Modal states
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false)
+  const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('')
+  const [isDeletingAll, setIsDeletingAll] = useState(false)
 
   // Ingestion Modal State
   const [showIngestModal, setShowIngestModal] = useState(false)
@@ -106,6 +117,72 @@ export default function EnquiryConsolePage() {
     return () => clearTimeout(timer)
   }, [search, serviceLine, priority, status, sortBy, sortOrder])
 
+  // Selection Helper Functions
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === enquiries.length && enquiries.length > 0) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(enquiries.map((e) => e.id)))
+    }
+  }
+
+  // Bulk Delete Selected Handler
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return
+    setIsDeletingSelected(true)
+    try {
+      const idsArray = Array.from(selectedIds)
+      const res = await fetch('/api/enquiries', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: idsArray }),
+      })
+
+      if (!res.ok) throw new Error('Failed to delete selected enquiries')
+      
+      setEnquiries((prev) => prev.filter((e) => !selectedIds.has(e.id)))
+      setSelectedIds(new Set())
+      setShowDeleteSelectedModal(false)
+    } catch (err: any) {
+      alert(`Error deleting selected: ${err.message}`)
+    } finally {
+      setIsDeletingSelected(false)
+    }
+  }
+
+  // Delete All Enquiries Handler
+  const handleDeleteAll = async () => {
+    if (deleteAllConfirmText.trim().toUpperCase() !== 'DELETE') return
+    setIsDeletingAll(true)
+    try {
+      const res = await fetch('/api/enquiries', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deleteAll: true }),
+      })
+
+      if (!res.ok) throw new Error('Failed to clear database')
+      
+      setEnquiries([])
+      setSelectedIds(new Set())
+      setShowDeleteAllModal(false)
+      setDeleteAllConfirmText('')
+    } catch (err: any) {
+      alert(`Error wiping database: ${err.message}`)
+    } finally {
+      setIsDeletingAll(false)
+    }
+  }
+
   // Single Status Inline Transition Update
   const handleStatusChange = async (id: string, newStatus: Status) => {
     try {
@@ -141,7 +218,7 @@ export default function EnquiryConsolePage() {
     }
   }
 
-  // Delete enquiry
+  // Single Delete per-row icon
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this enquiry record?')) return
     try {
@@ -179,67 +256,60 @@ export default function EnquiryConsolePage() {
         formData.append('file', uploadFile)
       }
 
-      const res = await fetch('/api/enquiries/batch', {
+      const response = await fetch('/api/enquiries/batch', {
         method: 'POST',
         body: formData,
       })
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}))
-        throw new Error(errJson.error || 'Ingestion failed')
+      if (!response.ok || !response.body) {
+        throw new Error('Ingestion request failed on server.')
       }
 
-      if (!res.body) throw new Error('ReadableStream not supported')
-
-      const reader = res.body.getReader()
+      const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
 
       while (true) {
-        const { value, done } = await reader.read()
+        const { done, value } = await reader.read()
         if (done) break
 
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
-        buffer = lines.pop() || '' // Keep last incomplete line in buffer
+        buffer = lines.pop() || ''
 
         for (const line of lines) {
           if (!line.trim()) continue
           try {
             const event = JSON.parse(line)
 
-            if (event.type === 'batch_started') {
+            if (event.type === 'start') {
               setBatchProgress((prev) => ({
                 ...prev,
                 total: event.total,
-                message: `Found ${event.total} enquiry block(s). Extracting with Claude...`,
+                message: `Splitting text into ${event.total} enquiry blocks...`,
               }))
-            } else if (event.type === 'item_success') {
+            } else if (event.type === 'progress') {
               setBatchProgress((prev) => ({
                 ...prev,
-                processed: prev.processed + 1,
-                successCount: prev.successCount + 1,
-                message: `Processed ${prev.processed + 1} of ${prev.total} items...`,
+                processed: event.processed,
+                successCount: event.success ? prev.successCount + 1 : prev.successCount,
+                failCount: event.success ? prev.failCount : prev.failCount + 1,
+                message: event.item?.company ? `Ingested: ${event.item.company}` : `Processing ${event.processed}/${event.total}...`,
               }))
-              // Dynamically insert or update row live in table!
-              setEnquiries((prev) => [event.enquiry, ...prev.filter((e) => e.id !== event.enquiry.id)])
-            } else if (event.type === 'item_failed') {
-              setBatchProgress((prev) => ({
-                ...prev,
-                processed: prev.processed + 1,
-                failCount: prev.failCount + 1,
-                message: `Item #${event.index + 1} extraction failed. Inserted error record.`,
-              }))
-              setEnquiries((prev) => [event.enquiry, ...prev.filter((e) => e.id !== event.enquiry.id)])
-            } else if (event.type === 'batch_completed') {
+
+              if (event.item && event.success) {
+                setEnquiries((prev) => [event.item, ...prev.filter((e) => e.id !== event.item.id)])
+              }
+            } else if (event.type === 'complete') {
               setBatchProgress((prev) => ({
                 ...prev,
                 running: false,
-                message: `Ingestion complete! Successfully triaged items.`,
+                message: `Completed processing ${event.processed} items (${event.successful} successful, ${event.failed} failed).`,
               }))
+              loadEnquiries()
             }
-          } catch (pErr) {
-            console.error('Parse chunk error:', pErr)
+          } catch (e) {
+            console.error('Error parsing NDJSON line:', e)
           }
         }
       }
@@ -248,120 +318,131 @@ export default function EnquiryConsolePage() {
       setPasteText('')
       setUploadFile(null)
       setIsDemoLoaded(false)
-      loadEnquiries()
     } catch (err: any) {
       alert(`Ingestion Error: ${err.message}`)
-      setBatchProgress({ running: false, total: 0, processed: 0, successCount: 0, failCount: 0, message: '' })
+      setBatchProgress((prev) => ({ ...prev, running: false, message: `Error: ${err.message}` }))
     }
   }
 
-  // Load Demo Enquiry Handler
-  const handleLoadDemoEnquiry = () => {
+  // Load Demo Text helper
+  const handleLoadDemo = () => {
     setActiveTab('paste')
     setPasteText(DEMO_ENQUIRY_TEXT)
     setIsDemoLoaded(true)
   }
 
-  // Selection handlers
-  const toggleSelectAll = () => {
-    if (selectedIds.size === enquiries.length && enquiries.length > 0) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(enquiries.map((e) => e.id)))
-    }
-  }
-
-  const toggleSelectOne = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  // Stats calculation
+  // Computed summary counts
   const totalCount = enquiries.length
+  const newCount = enquiries.filter((e) => e.status === 'new').length
   const highPriorityCount = enquiries.filter((e) => e.priority === 'high').length
-  const genuineCount = enquiries.filter((e) => e.isGenuineEnquiry).length
-  const totalPipelineUsd = enquiries.reduce((sum, e) => sum + (e.budgetNormalized || 0), 0)
+  const totalBudgetUSD = enquiries.reduce((acc, curr) => acc + (curr.budgetNormalized || 0), 0)
 
   return (
     <div className="space-y-6">
-      {/* Overview Stats Bar */}
+      {/* Top Console Stats Banner */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="glass-panel p-4 rounded-xl flex items-center justify-between border-slate-800">
+        <div className="glass-panel p-4 rounded-2xl border-slate-800 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Enquiries</p>
-            <h3 className="text-2xl font-bold text-slate-100 mt-1">{totalCount}</h3>
+            <div className="text-xs font-semibold text-slate-400">Total Enquiries</div>
+            <div className="text-2xl font-bold text-slate-100 mt-1">{totalCount}</div>
           </div>
-          <div className="w-10 h-10 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+          <div className="p-3 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
             <Inbox className="w-5 h-5" />
           </div>
         </div>
 
-        <div className="glass-panel p-4 rounded-xl flex items-center justify-between border-slate-800">
+        <div className="glass-panel p-4 rounded-2xl border-slate-800 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">High Priority</p>
-            <h3 className="text-2xl font-bold text-rose-400 mt-1">{highPriorityCount}</h3>
+            <div className="text-xs font-semibold text-slate-400">Unreviewed / New</div>
+            <div className="text-2xl font-bold text-amber-400 mt-1">{newCount}</div>
           </div>
-          <div className="w-10 h-10 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
-            <ShieldAlert className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="glass-panel p-4 rounded-xl flex items-center justify-between border-slate-800">
-          <div>
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Genuine Projects</p>
-            <h3 className="text-2xl font-bold text-emerald-400 mt-1">{genuineCount}</h3>
-          </div>
-          <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+          <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
             <UserCheck className="w-5 h-5" />
           </div>
         </div>
 
-        <div className="glass-panel p-4 rounded-xl flex items-center justify-between border-slate-800">
+        <div className="glass-panel p-4 rounded-2xl border-slate-800 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Normalized Pipeline</p>
-            <h3 className="text-2xl font-bold text-cyan-400 mt-1">{formatCurrency(totalPipelineUsd)}</h3>
+            <div className="text-xs font-semibold text-slate-400">High Priority</div>
+            <div className="text-2xl font-bold text-rose-400 mt-1">{highPriorityCount}</div>
           </div>
-          <div className="w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+          <div className="p-3 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+            <ShieldAlert className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="glass-panel p-4 rounded-2xl border-slate-800 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-slate-400">Pipeline Est. Value</div>
+            <div className="text-2xl font-bold text-emerald-400 mt-1">{formatCurrency(totalBudgetUSD)} USD</div>
+          </div>
+          <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <TrendingUp className="w-5 h-5" />
           </div>
         </div>
       </div>
 
-      {/* Main Action Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 glass-panel p-4 rounded-2xl border-slate-800">
-        <div>
-          <h1 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
-            <span>Project Triage Console</span>
-          </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Ingest raw text, .txt files, or .pdf files to extract structured fields and score priority.
-          </p>
+      {/* Main Console Action & Filter Bar */}
+      <div className="glass-panel p-5 rounded-2xl border-slate-800 space-y-4 shadow-xl">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
+              <span>Sodio Triage Console</span>
+              <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 text-xs font-mono border border-indigo-500/20">
+                Live Console
+              </span>
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Review, filter, edit, and re-extract structured project enquiries in real-time.
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-3 w-full md:w-auto">
+            <button
+              onClick={() => setShowIngestModal(true)}
+              className="flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/30 transition-all w-full md:w-auto"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Ingest Enquiries</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => setShowIngestModal(true)}
-            className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/25 transition-all"
-          >
-            <Upload className="w-4 h-4" />
-            <span>Ingest Enquiries (.txt / .pdf / Paste)</span>
-          </button>
-        </div>
-      </div>
+        {/* Live Batch Ingestion Progress Bar (if active) */}
+        {batchProgress.running && (
+          <div className="p-4 rounded-xl bg-indigo-950/80 border border-indigo-500/40 space-y-2 animate-pulse">
+            <div className="flex items-center justify-between text-xs font-semibold text-indigo-300">
+              <span className="flex items-center space-x-2">
+                <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+                <span>{batchProgress.message}</span>
+              </span>
+              <span>
+                {batchProgress.processed} / {batchProgress.total} items
+              </span>
+            </div>
+            <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
+              <div
+                className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full transition-all duration-300"
+                style={{
+                  width: `${
+                    batchProgress.total > 0
+                      ? Math.min(100, Math.round((batchProgress.processed / batchProgress.total) * 100))
+                      : 5
+                  }%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
 
-      {/* Filter and Control Bar */}
-      <div className="glass-panel p-4 rounded-xl border-slate-800 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        {/* Search & Filter Controls Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-slate-800/80">
           {/* Search Box */}
-          <div className="relative lg:col-span-2">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
             <input
               type="text"
-              placeholder="Search company, contact, text, summary..."
+              placeholder="Search company, name, email, query..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-9 pr-3 py-2 bg-slate-900/90 border border-slate-700/80 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
@@ -415,8 +496,8 @@ export default function EnquiryConsolePage() {
           </div>
         </div>
 
-        {/* Sort Controls Bar */}
-        <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-800/80">
+        {/* Sort Controls Bar & Bulk Action Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400 pt-2 border-t border-slate-800/80">
           <div className="flex items-center space-x-2">
             <span>Sort by:</span>
             <button
@@ -456,8 +537,42 @@ export default function EnquiryConsolePage() {
             </button>
           </div>
 
-          <div>
-            Showing <strong className="text-slate-200">{enquiries.length}</strong> enquiries
+          <div className="flex items-center space-x-3">
+            {/* Bulk Selection Action Bar */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center space-x-2 animate-fadeIn">
+                <span className="text-indigo-300 font-semibold">{selectedIds.size} selected</span>
+                <button
+                  onClick={() => setShowDeleteSelectedModal(true)}
+                  className="flex items-center space-x-1.5 px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-md shadow-rose-600/20 transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Selected</span>
+                </button>
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  className="px-2 py-1 rounded bg-slate-800 text-slate-400 hover:text-slate-200"
+                >
+                  Deselect
+                </button>
+              </div>
+            )}
+
+            {/* Clear All Enquiries Button */}
+            {enquiries.length > 0 && (
+              <button
+                onClick={() => setShowDeleteAllModal(true)}
+                className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-rose-950/80 text-rose-400 hover:text-rose-200 border border-slate-800 hover:border-rose-800/80 transition-all text-xs font-medium"
+                title="Wipe database and clear all enquiries"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete All</span>
+              </button>
+            )}
+
+            <div>
+              Showing <strong className="text-slate-200">{enquiries.length}</strong> enquiries
+            </div>
           </div>
         </div>
       </div>
@@ -511,7 +626,9 @@ export default function EnquiryConsolePage() {
                   return (
                     <tr
                       key={item.id}
-                      className="hover:bg-slate-800/40 transition-colors group"
+                      className={`hover:bg-slate-800/40 transition-colors group ${
+                        selectedIds.has(item.id) ? 'bg-indigo-950/20' : ''
+                      }`}
                     >
                       <td className="py-3.5 px-4">
                         <input
@@ -598,7 +715,7 @@ export default function EnquiryConsolePage() {
                           <span
                             className={
                               item.timeline?.toLowerCase().includes('asap')
-                                ? 'text-rose-400 font-semibold'
+                                ? 'text-amber-300 font-semibold'
                                 : 'text-slate-300'
                             }
                           >
@@ -610,18 +727,18 @@ export default function EnquiryConsolePage() {
                       {/* Priority */}
                       <td className="py-3.5 px-4">
                         <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${priorityStyle.badge}`}
+                          className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wide border ${priorityStyle.badge}`}
                         >
-                          {item.priority}
+                          <span>{item.priority}</span>
                         </span>
                       </td>
 
-                      {/* Status Workflow Selector */}
+                      {/* Status Workflow Dropdown */}
                       <td className="py-3.5 px-4">
                         <select
                           value={item.status}
                           onChange={(e) => handleStatusChange(item.id, e.target.value as Status)}
-                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-900 text-slate-100 border border-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-sm"
+                          className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-900 text-slate-100 border border-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-sm"
                         >
                           <option value="new" className="bg-slate-900 text-slate-100">New</option>
                           <option value="contacted" className="bg-slate-900 text-slate-100">Contacted</option>
@@ -630,36 +747,32 @@ export default function EnquiryConsolePage() {
                         </select>
                       </td>
 
-                      {/* Action buttons */}
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end space-x-2">
-                          <Link
-                            href={`/enquiries/${item.id}`}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-                            title="View Full Detail"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </Link>
-
-                          <button
-                            onClick={() => handleReExtract(item.id)}
-                            disabled={reExtractingId === item.id}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-400 hover:text-indigo-300 transition-colors disabled:opacity-50"
-                            title="Re-run LLM Extraction"
-                          >
-                            <RefreshCw
-                              className={`w-4 h-4 ${reExtractingId === item.id ? 'animate-spin' : ''}`}
-                            />
-                          </button>
-
-                          <button
-                            onClick={() => handleDelete(item.id)}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors"
-                            title="Delete Enquiry"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                      {/* Row Actions */}
+                      <td className="py-3.5 px-4 text-right space-x-2">
+                        <button
+                          onClick={() => handleReExtract(item.id)}
+                          disabled={reExtractingId === item.id}
+                          title="Re-run AI extraction"
+                          className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                        >
+                          <RefreshCw
+                            className={`w-3.5 h-3.5 ${reExtractingId === item.id ? 'animate-spin text-indigo-400' : ''}`}
+                          />
+                        </button>
+                        <Link
+                          href={`/enquiries/${item.id}`}
+                          title="Open Detail View"
+                          className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors inline-block"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </Link>
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          title="Delete Enquiry"
+                          className="p-1.5 rounded bg-slate-800 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </td>
                     </tr>
                   )
@@ -670,152 +783,187 @@ export default function EnquiryConsolePage() {
         )}
       </div>
 
-      {/* Real-time Streaming Batch Overlay */}
-      {batchProgress.running && (
-        <div className="fixed bottom-6 right-6 z-50 glass-panel p-4 rounded-xl border-indigo-500/50 shadow-2xl max-w-md w-full animate-pulse-subtle">
-          <div className="flex items-start space-x-3">
-            <Loader2 className="w-5 h-5 text-indigo-400 animate-spin shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <h4 className="text-xs font-bold text-slate-100">Live Ingestion Streaming</h4>
-              <p className="text-[11px] text-slate-300">{batchProgress.message}</p>
-              {batchProgress.total > 0 && (
-                <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-1.5">
-                  <div
-                    className="bg-indigo-500 h-full transition-all duration-300"
-                    style={{ width: `${Math.min(100, (batchProgress.processed / batchProgress.total) * 100)}%` }}
-                  />
-                </div>
-              )}
+      {/* Delete Selected Confirmation Modal */}
+      {showDeleteSelectedModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-6 rounded-2xl max-w-md w-full border-slate-700 space-y-4 shadow-2xl">
+            <div className="flex items-center space-x-3 text-rose-400">
+              <AlertTriangle className="w-6 h-6 shrink-0" />
+              <h3 className="text-base font-bold text-slate-100">Delete Selected Enquiries</h3>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Are you sure you want to permanently delete <strong className="text-rose-400">{selectedIds.size}</strong> selected enquiry record(s) and their audit logs? This action cannot be undone.
+            </p>
+
+            <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setShowDeleteSelectedModal(false)}
+                className="px-3.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={isDeletingSelected}
+                className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-md shadow-rose-600/30 disabled:opacity-50"
+              >
+                {isDeletingSelected ? 'Deleting...' : `Confirm Delete (${selectedIds.size})`}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Multiform Ingestion Modal (Tabs: Paste Text, Upload .txt, Upload .pdf + Demo Enquiry Button) */}
+      {/* Delete All Enquiries Confirmation Modal */}
+      {showDeleteAllModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-6 rounded-2xl max-w-md w-full border-rose-500/40 space-y-4 shadow-2xl">
+            <div className="flex items-center space-x-3 text-rose-400">
+              <AlertTriangle className="w-6 h-6 shrink-0" />
+              <h3 className="text-base font-bold text-slate-100">⚠️ DANGER: Delete All Enquiries</h3>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              This will permanently wipe <strong className="text-rose-400">ALL {enquiries.length}</strong> enquiry records and audit history events from the database.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-slate-400">
+                Type <code className="text-rose-400 font-bold font-mono">DELETE</code> below to confirm wipe:
+              </label>
+              <input
+                type="text"
+                value={deleteAllConfirmText}
+                onChange={(e) => setDeleteAllConfirmText(e.target.value)}
+                placeholder="Type DELETE"
+                className="w-full px-3 py-2 bg-slate-950 border border-rose-500/50 rounded-lg text-slate-100 font-mono text-xs focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => {
+                  setShowDeleteAllModal(false)
+                  setDeleteAllConfirmText('')
+                }}
+                className="px-3.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAll}
+                disabled={deleteAllConfirmText.trim().toUpperCase() !== 'DELETE' || isDeletingAll}
+                className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-md shadow-rose-600/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isDeletingAll ? 'Wiping Database...' : 'Wipe All Data'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Multiform Ingestion Modal */}
       {showIngestModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-panel p-6 rounded-2xl max-w-xl w-full border-slate-700 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-slate-100 flex items-center space-x-2">
                 <Upload className="w-5 h-5 text-indigo-400" />
-                <span>Ingest Enquiry Input</span>
+                <span>Ingest Project Enquiries</span>
               </h3>
               <button
                 onClick={() => setShowIngestModal(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-white text-sm"
               >
                 ✕
               </button>
             </div>
 
-            {/* Input Options Tabs */}
-            <div className="flex items-center space-x-2 p-1 bg-slate-900/90 rounded-xl border border-slate-800 text-xs">
+            {/* Ingestion Tabs */}
+            <div className="flex items-center space-x-2 border-b border-slate-800 pb-2">
               <button
                 onClick={() => setActiveTab('paste')}
-                className={`flex-1 py-1.5 rounded-lg font-medium transition-all ${
-                  activeTab === 'paste' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  activeTab === 'paste' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Paste Text
+                <FileText className="w-3.5 h-3.5" />
+                <span>Paste Text</span>
               </button>
               <button
                 onClick={() => setActiveTab('txt')}
-                className={`flex-1 py-1.5 rounded-lg font-medium transition-all ${
-                  activeTab === 'txt' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  activeTab === 'txt' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Upload .txt File
+                <FileCode className="w-3.5 h-3.5" />
+                <span>Batch .txt File</span>
               </button>
               <button
                 onClick={() => setActiveTab('pdf')}
-                className={`flex-1 py-1.5 rounded-lg font-medium transition-all ${
-                  activeTab === 'pdf' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  activeTab === 'pdf' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Upload .pdf File
+                <FileCheck className="w-3.5 h-3.5" />
+                <span>Upload .pdf Document</span>
               </button>
             </div>
 
-            {/* Tab 1: Paste Text + Demo Enquiry Button */}
+            {/* Tab 1: Paste Text */}
             {activeTab === 'paste' && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Paste single or multi-block enquiry raw text below:</span>
+                  <label className="text-xs font-medium text-slate-300">
+                    Paste raw customer message or enquiry block below:
+                  </label>
                   <button
-                    onClick={handleLoadDemoEnquiry}
-                    className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 text-xs font-semibold border border-indigo-500/30 transition-all"
+                    onClick={handleLoadDemo}
+                    className="flex items-center space-x-1 text-xs text-indigo-400 hover:text-indigo-300 font-semibold"
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Load Demo Enquiry</span>
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Load demo enquiry</span>
                   </button>
                 </div>
-
                 <textarea
-                  rows={7}
+                  rows={6}
                   value={pasteText}
-                  onChange={(e) => {
-                    setPasteText(e.target.value)
-                    if (isDemoLoaded) setIsDemoLoaded(false)
-                  }}
-                  placeholder="Paste raw text message from client here..."
-                  className="w-full p-3 bg-slate-950 border border-slate-700 rounded-xl text-xs text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-indigo-500"
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder="Paste enquiry text here..."
+                  className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
                 />
-
-                {isDemoLoaded && (
-                  <p className="text-[11px] text-amber-400 font-medium flex items-center space-x-1">
-                    <span>* Showing realistic demo enquiry format. Click "Ingest &amp; Process" or edit text above.</span>
-                  </p>
-                )}
               </div>
             )}
 
             {/* Tab 2 & 3: File Upload (.txt or .pdf) */}
             {(activeTab === 'txt' || activeTab === 'pdf') && (
               <div className="space-y-3">
-                <p className="text-xs text-slate-400">
-                  Upload a <code className="text-indigo-300">.{activeTab}</code> file containing raw enquiry blocks (separated by <code className="text-indigo-300">---</code>).
-                  {activeTab === 'pdf' && ' Server-side pdf-parse will extract readable text layers.'}
-                </p>
-
-                <div className="border-2 border-dashed border-slate-700 hover:border-indigo-500/50 rounded-xl p-6 text-center space-y-3 bg-slate-950/60 transition-colors">
-                  <Upload className="w-8 h-8 mx-auto text-indigo-400" />
-                  <div>
-                    <label className="cursor-pointer text-xs font-semibold text-indigo-400 hover:text-indigo-300">
-                      <span>Select .{activeTab} file from disk</span>
-                      <input
-                        type="file"
-                        accept={activeTab === 'pdf' ? '.pdf' : '.txt'}
-                        className="hidden"
-                        onChange={(e) => {
-                          if (e.target.files?.[0]) setUploadFile(e.target.files[0])
-                        }}
-                      />
-                    </label>
-                    {uploadFile && (
-                      <p className="text-xs text-emerald-400 font-mono mt-2 flex items-center justify-center space-x-1">
-                        <FileCheck className="w-4 h-4" />
-                        <span>Selected: {uploadFile.name} ({(uploadFile.size / 1024).toFixed(1)} KB)</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
+                <label className="text-xs font-medium text-slate-300">
+                  Select a <code className="text-indigo-300 font-mono">.{activeTab}</code> file containing project enquiries:
+                </label>
+                <input
+                  type="file"
+                  accept={activeTab === 'txt' ? '.txt' : '.pdf'}
+                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                  className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white file:text-xs file:font-semibold cursor-pointer"
+                />
               </div>
             )}
 
-            {/* Footer Buttons */}
-            <div className="flex justify-end space-x-3 pt-2 border-t border-slate-800">
+            <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
               <button
                 onClick={() => setShowIngestModal(false)}
-                className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-medium hover:bg-slate-700"
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
               >
                 Cancel
               </button>
               <button
-                disabled={activeTab === 'paste' ? !pasteText.trim() : !uploadFile}
                 onClick={handleStreamIngest}
-                className="px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-semibold disabled:opacity-50 transition-all shadow-md shadow-indigo-600/20"
+                disabled={batchProgress.running}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/30 disabled:opacity-50"
               >
-                Ingest &amp; Process
+                {batchProgress.running ? 'Processing...' : 'Run Extraction Pipeline'}
               </button>
             </div>
           </div>
