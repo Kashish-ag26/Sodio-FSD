@@ -182,7 +182,7 @@ export default function EnquiryDetailPage() {
         <AlertTriangle className="w-10 h-10 mx-auto text-rose-400" />
         <h3 className="text-base font-bold text-slate-200">{error || 'Enquiry Not Found'}</h3>
         <Link
-          href="/"
+          href="/enquiries"
           className="inline-flex items-center space-x-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -193,8 +193,6 @@ export default function EnquiryDetailPage() {
   }
 
   const priorityStyle = getPriorityColor(enquiry.priority)
-  const serviceStyle = getServiceLineColor(enquiry.serviceLine)
-  const statusStyle = getStatusColor(enquiry.status)
   const isPromptInjection = enquiry.extractionNotes?.toLowerCase().includes('injection')
 
   return (
@@ -203,7 +201,7 @@ export default function EnquiryDetailPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 glass-panel p-4 rounded-2xl border-slate-800">
         <div className="flex items-center space-x-3">
           <Link
-            href="/"
+            href="/enquiries"
             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -319,7 +317,7 @@ export default function EnquiryDetailPage() {
 
           {/* Extraction Notes & Flags */}
           <div className="glass-panel p-4 rounded-xl border-slate-800 space-y-2">
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Extraction Notes & Security Audit</h4>
+            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Extraction Notes &amp; Security Audit</h4>
             <p className="text-xs text-slate-400 leading-relaxed bg-slate-900/60 p-3 rounded-lg border border-slate-800">
               {enquiry.extractionNotes || 'No special flags or notes generated during extraction.'}
             </p>
@@ -334,8 +332,10 @@ export default function EnquiryDetailPage() {
                 <h3 className="text-sm font-bold text-slate-200">Extracted Structured Fields</h3>
                 <p className="text-xs text-slate-400">Click any field to edit manually. Edits are tracked and protected during re-extraction.</p>
               </div>
+              
+              {/* High-Contrast Status Dropdown */}
               <div className="flex items-center space-x-2">
-                <span className="text-[11px] text-slate-400">Status:</span>
+                <span className="text-[11px] font-semibold text-slate-400">Status:</span>
                 <select
                   value={editValues.status || enquiry.status}
                   onChange={(e) => {
@@ -343,12 +343,12 @@ export default function EnquiryDetailPage() {
                     setEditValues((prev) => ({ ...prev, status: newStatus }))
                     handleSaveField('status')
                   }}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-slate-100 border border-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-sm"
                 >
-                  <option value="new" className="bg-slate-900 text-slate-200">New</option>
-                  <option value="contacted" className="bg-slate-900 text-slate-200">Contacted</option>
-                  <option value="qualified" className="bg-slate-900 text-slate-200">Qualified</option>
-                  <option value="dropped" className="bg-slate-900 text-slate-200">Dropped</option>
+                  <option value="new" className="bg-slate-900 text-slate-100">New</option>
+                  <option value="contacted" className="bg-slate-900 text-slate-100">Contacted</option>
+                  <option value="qualified" className="bg-slate-900 text-slate-100">Qualified</option>
+                  <option value="dropped" className="bg-slate-900 text-slate-100">Dropped</option>
                 </select>
               </div>
             </div>
@@ -475,7 +475,7 @@ export default function EnquiryDetailPage() {
                   )}
                 </div>
 
-                {/* Service Line */}
+                {/* High-Contrast Service Line Dropdown */}
                 <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800/80 space-y-1">
                   <div className="flex items-center justify-between text-slate-400">
                     <span className="font-semibold flex items-center space-x-1.5">
@@ -493,14 +493,14 @@ export default function EnquiryDetailPage() {
                       setEditValues((prev) => ({ ...prev, serviceLine: newS }))
                       handleSaveField('serviceLine')
                     }}
-                    className={`mt-1 px-2.5 py-1 rounded text-xs font-semibold border ${serviceStyle.bg} ${serviceStyle.text} ${serviceStyle.border}`}
+                    className="mt-1 w-full px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-slate-100 border border-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-sm"
                   >
-                    <option value="ai" className="bg-slate-900 text-slate-200">AI / ML</option>
-                    <option value="blockchain" className="bg-slate-900 text-slate-200">Blockchain / Web3</option>
-                    <option value="web" className="bg-slate-900 text-slate-200">Web App</option>
-                    <option value="mobile" className="bg-slate-900 text-slate-200">Mobile App</option>
-                    <option value="game" className="bg-slate-900 text-slate-200">Game Dev</option>
-                    <option value="other" className="bg-slate-900 text-slate-200">Other</option>
+                    <option value="ai" className="bg-slate-900 text-slate-100">AI / ML</option>
+                    <option value="blockchain" className="bg-slate-900 text-slate-100">Blockchain / Web3</option>
+                    <option value="web" className="bg-slate-900 text-slate-100">Web App</option>
+                    <option value="mobile" className="bg-slate-900 text-slate-100">Mobile App</option>
+                    <option value="game" className="bg-slate-900 text-slate-100">Game Dev</option>
+                    <option value="other" className="bg-slate-900 text-slate-100">Other</option>
                   </select>
                 </div>
               </div>
@@ -589,6 +589,7 @@ export default function EnquiryDetailPage() {
                   </button>
                 </div>
 
+                {/* High-Contrast Priority Dropdown */}
                 <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/50 border border-slate-800/80">
                   <span className="font-semibold text-slate-400">Priority Score (Derived)</span>
                   <select
@@ -598,11 +599,11 @@ export default function EnquiryDetailPage() {
                       setEditValues((prev) => ({ ...prev, priority: p }))
                       handleSaveField('priority')
                     }}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold uppercase border ${priorityStyle.badge}`}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold uppercase bg-slate-900 text-slate-100 border border-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-sm"
                   >
-                    <option value="high" className="bg-slate-900 text-slate-200">HIGH</option>
-                    <option value="medium" className="bg-slate-900 text-slate-200">MEDIUM</option>
-                    <option value="low" className="bg-slate-900 text-slate-200">LOW</option>
+                    <option value="high" className="bg-slate-900 text-slate-100">HIGH</option>
+                    <option value="medium" className="bg-slate-900 text-slate-100">MEDIUM</option>
+                    <option value="low" className="bg-slate-900 text-slate-100">LOW</option>
                   </select>
                 </div>
               </div>

@@ -621,12 +621,12 @@ export default function EnquiryConsolePage() {
                         <select
                           value={item.status}
                           onChange={(e) => handleStatusChange(item.id, e.target.value as Status)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold border focus:outline-none transition-colors ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-900 text-slate-100 border border-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-sm"
                         >
-                          <option value="new" className="bg-slate-900 text-slate-200">New</option>
-                          <option value="contacted" className="bg-slate-900 text-slate-200">Contacted</option>
-                          <option value="qualified" className="bg-slate-900 text-slate-200">Qualified</option>
-                          <option value="dropped" className="bg-slate-900 text-slate-200">Dropped</option>
+                          <option value="new" className="bg-slate-900 text-slate-100">New</option>
+                          <option value="contacted" className="bg-slate-900 text-slate-100">Contacted</option>
+                          <option value="qualified" className="bg-slate-900 text-slate-100">Qualified</option>
+                          <option value="dropped" className="bg-slate-900 text-slate-100">Dropped</option>
                         </select>
                       </td>
 
