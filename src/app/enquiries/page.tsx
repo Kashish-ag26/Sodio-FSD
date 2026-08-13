@@ -301,11 +301,14 @@ export default function EnquiryConsolePage() {
                 setEnquiries((prev) => [event.item, ...prev.filter((e) => e.id !== event.item.id)])
               }
             } else if (event.type === 'complete') {
-              setBatchProgress((prev) => ({
-                ...prev,
+              setBatchProgress({
                 running: false,
-                message: `Completed processing ${event.processed} items (${event.successful} successful, ${event.failed} failed).`,
-              }))
+                total: 0,
+                processed: 0,
+                successCount: 0,
+                failCount: 0,
+                message: '',
+              })
               loadEnquiries()
             }
           } catch (e) {
@@ -320,7 +323,14 @@ export default function EnquiryConsolePage() {
       setIsDemoLoaded(false)
     } catch (err: any) {
       alert(`Ingestion Error: ${err.message}`)
-      setBatchProgress((prev) => ({ ...prev, running: false, message: `Error: ${err.message}` }))
+      setBatchProgress({
+        running: false,
+        total: 0,
+        processed: 0,
+        successCount: 0,
+        failCount: 0,
+        message: '',
+      })
     }
   }
 
@@ -408,8 +418,8 @@ export default function EnquiryConsolePage() {
           </div>
         </div>
 
-        {/* Live Batch Ingestion Progress Bar (if active) */}
-        {batchProgress.running && (
+        {/* Live Batch Ingestion Progress Bar (only when actively running with real items > 0) */}
+        {batchProgress.running && batchProgress.total > 0 && (
           <div className="p-4 rounded-xl bg-indigo-950/80 border border-indigo-500/40 space-y-2 animate-pulse">
             <div className="flex items-center justify-between text-xs font-semibold text-indigo-300">
               <span className="flex items-center space-x-2">
@@ -427,7 +437,7 @@ export default function EnquiryConsolePage() {
                   width: `${
                     batchProgress.total > 0
                       ? Math.min(100, Math.round((batchProgress.processed / batchProgress.total) * 100))
-                      : 5
+                      : 0
                   }%`,
                 }}
               />
