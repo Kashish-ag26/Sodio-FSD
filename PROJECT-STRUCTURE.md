@@ -8,24 +8,28 @@ This guide gives a quick, plain-English overview of how the **Sodio Enquiry Tria
 
 All user interface code is built with Next.js 14 App Router, TypeScript, and Tailwind CSS.
 
+- **`src/app/page.tsx`**
+  - *What lives here:* The landing Home Page (`/`), featuring an operational overview, tool explanation, live database counts (total, unreviewed, high priority, pipeline value), and a primary call-to-action button into the console.
+  - *Why open this:* To edit home landing page text, operational summaries, or live DB statistics cards.
+
+- **`src/app/enquiries/page.tsx`**
+  - *What lives here:* The main Triage Console dashboard page (`/enquiries`), featuring search, combinable filters, sorting, bulk actions, multiform ingestion modal (Tabs for Paste text, `.txt` upload, `.pdf` upload), "Load demo enquiry" button, and live streaming batch progress.
+  - *Why open this:* To review or modify how enquiries are listed, filtered, sorted, or ingested in bulk.
+
+- **`src/app/enquiries/[id]/page.tsx`**
+  - *What lives here:* The detail view page for a single enquiry, featuring a split pane (untouched raw source text on the left, structured editable fields on the right), prompt injection alert banner, and AI diff suggestions.
+  - *Why open this:* To inspect how raw text is compared against extracted fields, how inline edits work, or how AI re-extraction diff suggestions are displayed.
+
 - **`src/app/layout.tsx`**
-  - *What lives here:* The root page layout shell, containing the top navigation bar, Sodio branding, and environment status badges.
-  - *Why open this:* To edit global headers, footers, dark theme wraps, or font configurations.
+  - *What lives here:* The root page layout shell, containing top navigation links (Home & Triage Console), Sodio branding, and environment status badges.
+  - *Why open this:* To edit global navigation headers, footers, dark theme wraps, or font configurations.
 
 - **`src/app/globals.css`**
   - *What lives here:* The single global CSS stylesheet with Tailwind directives, dark theme tokens, scrollbar rules, and glassmorphism styling.
   - *Why open this:* To adjust global UI colors, animations, or styling utilities.
 
-- **`src/app/page.tsx`**
-  - *What lives here:* The main Triage Console dashboard page (list view, search, combinable filters, sorting, bulk actions, and batch file upload modal).
-  - *Why open this:* To review or modify how enquiries are listed, filtered, sorted, or ingested in bulk.
-
-- **`src/app/enquiries/[id]/page.tsx`**
-  - *What lives here:* The detail view page for a single enquiry, featuring a split pane (untouched raw source text on the left, structured editable fields on the right).
-  - *Why open this:* To inspect how raw text is compared against extracted fields, how inline edits work, or how AI re-extraction diff suggestions are displayed.
-
 - **`src/lib/utils.ts`**
-  - *What lives here:* Formatting helpers for USD currency, dates, CSS class merging, and priority/service color themes.
+  - *What lives here:* Formatting helpers for USD currency, dates, CSS class merging (`twMerge`), and priority/service color themes.
   - *Why open this:* To change badge color schemes or date/currency formatters.
 
 ---
@@ -47,8 +51,8 @@ All backend endpoints live under `src/app/api/` as Next.js API route handlers, i
   - *Why open this:* To check or modify how database connections are pooled in Next.js development.
 
 - **`src/lib/parsing.ts`**
-  - *What lives here:* The raw text file parser that splits uploaded batch files or text strings into individual enquiry blocks using dashed line separators (`---`).
-  - *Why open this:* To adjust file splitting logic or multi-item text delimiter rules.
+  - *What lives here:* Text file & PDF file parser (`extractTextFromPdfBuffer` using `pdf-parse`) that splits input text into raw enquiry blocks using dashed line separators (`---`).
+  - *Why open this:* To inspect CRLF line ending fixes, PDF parsing, or block-splitting logic.
 
 - **`src/app/api/enquiries/route.ts`**
   - *What lives here:* API endpoint for listing enquiries (with multi-field search, status/priority/service filtering, and sorting) and manually creating a new enquiry.
@@ -63,8 +67,8 @@ All backend endpoints live under `src/app/api/` as Next.js API route handlers, i
   - *Why open this:* To inspect the non-destructive re-extraction and AI recommendation diff engine.
 
 - **`src/app/api/enquiries/batch/route.ts`**
-  - *What lives here:* API endpoint for batch uploading enquiry files with bounded concurrency (`p-limit`) and per-item failure handling.
-  - *Why open this:* To see how concurrency, rate limits, and partial failures are managed during bulk processing.
+  - *What lives here:* API endpoint for batch processing `.txt` or `.pdf` uploads with bounded concurrency (`p-limit`) and streaming live NDJSON progress.
+  - *Why open this:* To see how concurrency, rate limits, PDF files, and itemized streaming updates are managed during bulk processing.
 
 ---
 
@@ -73,8 +77,8 @@ All backend endpoints live under `src/app/api/` as Next.js API route handlers, i
 These two files contain the core business logic and AI analysis engine for the entire application.
 
 - **`src/lib/llm/extractor.ts`**
-  - *What lives here:* The LLM extraction module that connects to Claude via `@anthropic-ai/sdk` (or uses a graceful local fallback stub when no key is set). Parses untrusted raw text into structured JSON metadata.
-  - *Why open this:* To review the Anthropic system prompts, prompt injection defense rules, currency/lakh normalizers, and fallback mechanisms.
+  - *What lives here:* The LLM extraction module that connects to Claude via `@anthropic-ai/sdk` or OpenRouter API (sk-or-v1-...). Parses untrusted raw text into structured JSON metadata.
+  - *Why open this:* To review the Anthropic / OpenRouter system prompts, prompt injection defense rules, currency/lakh normalizers, and fallback mechanisms.
 
 - **`src/lib/scoring.ts`**
   - *What lives here:* The pure, deterministic priority scoring function (`computePriority`). Evaluates budget size, timeline urgency, contact completeness, non-genuine flags, and prompt injection attempts in application code without LLM hallucination risk.
