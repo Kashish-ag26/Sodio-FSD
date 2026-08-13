@@ -21,8 +21,6 @@ import {
   FileCode,
   FileCheck,
   Sparkles,
-  CheckSquare,
-  Square,
 } from 'lucide-react'
 import type { Enquiry, Status } from '@/types/enquiry'
 import {
@@ -268,6 +266,10 @@ export default function EnquiryConsolePage() {
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let totalItems = 0
+      let processedItems = 0
+      let successItems = 0
+      let failItems = 0
 
       while (true) {
         const { done, value } = await reader.read()
@@ -282,25 +284,42 @@ export default function EnquiryConsolePage() {
           try {
             const event = JSON.parse(line)
 
-            if (event.type === 'start') {
-              setBatchProgress((prev) => ({
-                ...prev,
-                total: event.total,
-                message: `Splitting text into ${event.total} enquiry blocks...`,
-              }))
-            } else if (event.type === 'progress') {
-              setBatchProgress((prev) => ({
-                ...prev,
-                processed: event.processed,
-                successCount: event.success ? prev.successCount + 1 : prev.successCount,
-                failCount: event.success ? prev.failCount : prev.failCount + 1,
-                message: event.item?.company ? `Ingested: ${event.item.company}` : `Processing ${event.processed}/${event.total}...`,
-              }))
+            if (event.type === 'batch_started' || event.type === 'start') {
+              totalItems = event.total || 0
+              setBatchProgress({
+                running: true,
+                total: totalItems,
+                processed: 0,
+                successCount: 0,
+                failCount: 0,
+                message: `Splitting text into ${totalItems} enquiry block(s)...`,
+              })
+            } else if (
+              event.type === 'item_success' ||
+              event.type === 'item_failed' ||
+              event.type === 'progress'
+            ) {
+              processedItems++
+              const isSuccess = event.type === 'item_success' || event.success
+              if (isSuccess) successItems++
+              else failItems++
 
-              if (event.item && event.success) {
-                setEnquiries((prev) => [event.item, ...prev.filter((e) => e.id !== event.item.id)])
+              const item = event.enquiry || event.item
+              if (item) {
+                setEnquiries((prev) => [item, ...prev.filter((e) => e.id !== item.id)])
               }
-            } else if (event.type === 'complete') {
+
+              setBatchProgress({
+                running: true,
+                total: totalItems,
+                processed: processedItems,
+                successCount: successItems,
+                failCount: failItems,
+                message: item?.company
+                  ? `Ingested: ${item.company}`
+                  : `Processing ${processedItems}/${totalItems}...`,
+              })
+            } else if (event.type === 'batch_completed' || event.type === 'complete') {
               setBatchProgress({
                 running: false,
                 total: 0,
@@ -417,33 +436,6 @@ export default function EnquiryConsolePage() {
             </button>
           </div>
         </div>
-
-        {/* Live Batch Ingestion Progress Bar (only when actively running with real items > 0) */}
-        {batchProgress.running && batchProgress.total > 0 && (
-          <div className="p-4 rounded-xl bg-indigo-950/80 border border-indigo-500/40 space-y-2 animate-pulse">
-            <div className="flex items-center justify-between text-xs font-semibold text-indigo-300">
-              <span className="flex items-center space-x-2">
-                <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
-                <span>{batchProgress.message}</span>
-              </span>
-              <span>
-                {batchProgress.processed} / {batchProgress.total} items
-              </span>
-            </div>
-            <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
-              <div
-                className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full transition-all duration-300"
-                style={{
-                  width: `${
-                    batchProgress.total > 0
-                      ? Math.min(100, Math.round((batchProgress.processed / batchProgress.total) * 100))
-                      : 0
-                  }%`,
-                }}
-              />
-            </div>
-          </div>
-        )}
 
         {/* Search & Filter Controls Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-slate-800/80">
@@ -792,6 +784,36 @@ export default function EnquiryConsolePage() {
           </div>
         )}
       </div>
+
+      {/* Real-time Streaming Batch Ingestion Floating Overlay */}
+      {batchProgress.running && (
+        <div className="fixed bottom-6 right-6 z-50 glass-panel p-4 rounded-xl border-indigo-500/50 shadow-2xl max-w-md w-full animate-pulse-subtle">
+          <div className="flex items-start space-x-3">
+            <Loader2 className="w-5 h-5 text-indigo-400 animate-spin shrink-0 mt-0.5" />
+            <div className="space-y-1 w-full">
+              <h4 className="text-xs font-bold text-slate-100 flex items-center justify-between">
+                <span>Live Ingestion Streaming</span>
+                {batchProgress.total > 0 && (
+                  <span className="font-mono text-indigo-300 text-[11px]">
+                    {batchProgress.processed} / {batchProgress.total} items
+                  </span>
+                )}
+              </h4>
+              <p className="text-[11px] text-slate-300 truncate">{batchProgress.message}</p>
+              {batchProgress.total > 0 && (
+                <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-1 border border-slate-800">
+                  <div
+                    className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, Math.round((batchProgress.processed / batchProgress.total) * 100))}%`,
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Selected Confirmation Modal */}
       {showDeleteSelectedModal && (
