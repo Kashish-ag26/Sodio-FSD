@@ -1,54 +1,39 @@
 generator client {
   provider = "prisma-client-js"
-  @version 5
 }
 
 datasource db {
   provider = "sqlite"
-  url = env("DATABASE_URL")
-}
-
-enum ServiceLine {
-  ai
-  blockchain
-  web
-  mobile
-  game
-  other
-}
-
-enum Priority {
-  high
-  medium
-  low
-}
-
-enum Status {
-  new
-  contacted
-  qualified
-  dropped
+  url      = env("DATABASE_URL")
 }
 
 model Enquiry {
-  id                 String      @id @default("uuid()")
+  id                 String    @id @default(cuid())
   rawText            String
-  receivedAt         DateTime    @default(now())
+  receivedAt         DateTime  @default(now())
+
+  // Extracted fields
   company            String?
   contactName        String?
   contactEmail       String?
-  serviceLine        ServiceLine  @default(other)
-  budgetRaw          String
-  budgetNormalized   Float?
-  timeline           String
-  summary            String
-  isGenuineEnquiry   Boolean     @default(true)
+  serviceLine        String    @default("other") // ai | blockchain | web | mobile | game | other
+  budgetRaw          String    @default("TBD")
+  budgetNormalized   Float?                      // Approximate USD value for sorting
+  timeline           String    @default("TBD")
+  summary            String    @default("")
+  isGenuineEnquiry   Boolean   @default(true)
   extractionNotes    String?
-  priority           Priority    @default(low)
-  status             Status      @default(new)
+
+  // System/Derived fields
+  priority           String    @default("low")   // high | medium | low
+  status             String    @default("new")   // new | contacted | qualified | dropped
+
+  // Re-extraction & edit protection
+  humanEditedFields  String    @default("[]")    // JSON array string of field names modified by human
+  previousExtraction String?                     // JSON snapshot string of prior ExtractionResult
   extractionVersion  String?
-  lastExtractedAt    DateTime?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @default(now())
-  humanEditedFields  Json
+  lastExtractedAt    DateTime? @default(now())
+
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 }
