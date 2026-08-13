@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest *)",
+      "Bash(dir *)",
+      "Bash(rm -rf .claude)",
+      "Bash(mkdir -p src/app src/lib src/components src/types prisma)",
+      "Bash(npm init *)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git config *)"
+    ]
+  }
+}

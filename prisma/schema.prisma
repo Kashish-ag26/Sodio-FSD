@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+  @version 5
+}
+
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+enum ServiceLine {
+  ai
+  blockchain
+  web
+  mobile
+  game
+  other
+}
+
+enum Priority {
+  high
+  medium
+  low
+}
+
+enum Status {
+  new
+  contacted
+  qualified
+  dropped
+}
+
+model Enquiry {
+  id                 String      @id @default("uuid()")
+  rawText            String
+  receivedAt         DateTime    @default(now())
+  company            String?
+  contactName        String?
+  contactEmail       String?
+  serviceLine        ServiceLine  @default(other)
+  budgetRaw          String
+  budgetNormalized   Float?
+  timeline           String
+  summary            String
+  isGenuineEnquiry   Boolean     @default(true)
+  extractionNotes    String?
+  priority           Priority    @default(low)
+  status             Status      @default(new)
+  extractionVersion  String?
+  lastExtractedAt    DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @default(now())
+  humanEditedFields  Json
+}
