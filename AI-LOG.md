@@ -1,6 +1,6 @@
 # AI Usage Log & Iteration Commentary
 
-This document details the AI tools used during the construction of the **Sodio Enquiry Triage Console**, key design directions given, and **three concrete instances** where AI-generated initial attempts were flawed or unsuitable and had to be diagnosed and corrected.
+This document details the AI tools used during the construction of the **Sodio Enquiry Triage Console**, key design directions given, and **concrete instances** where AI-generated initial attempts were flawed or unsuitable and had to be diagnosed and corrected.
 
 ---
 
@@ -44,6 +44,14 @@ This document details the AI tools used during the construction of the **Sodio E
   2. Preserve the human's value on the primary database record for any field listed in `humanEditedFields`.
   3. Capture the new LLM extraction as an `aiSuggestions` object in the response payload.
   4. Build an interactive UI callout ("Accept AI Suggestion") on the detail page so humans retain 100% authority while still benefiting from AI re-evaluations.
+
+---
+
+### Instance 4: Relational History Audit Log & Re-Extraction Edit Protection Verification
+- **What was verified:**
+  We conducted automated end-to-end testing (`scratch/verify-reextraction.ts`) on live enquiries to verify that manual field edits (e.g. changing Company Name) persisted in SQLite, triggered automatic insertion of `EnquiryHistoryEvent` rows (`eventType: 'manual_edit'`), and were 100% protected during subsequent AI re-extraction runs (`eventType: 're_extraction'`).
+- **Outcome:**
+  Re-extraction successfully preserved all human-edited values in the database, logged the re-extraction audit event with notes on protected fields, and surfaced AI suggestions cleanly to the user.
 
 ---
 

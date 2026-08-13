@@ -52,6 +52,8 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to view the 
 - **Landing Home Page (`/`):** Clean operational landing page with tool explanation, live database counts (total enquiries, new/unreviewed count, high priority, total pipeline USD), and direct call-to-action button into the Triage Console (`/enquiries`).
 - **Multiform Ingestion (.txt, .pdf, Paste):** Accepts raw text, `.txt` batch files, AND `.pdf` files. Server-side text extraction (`pdf-parse`) extracts readable text layers from PDFs and runs them through the same block-splitting pipeline. Includes a **"Load demo enquiry"** button for 1-click test input.
 - **Live Streaming NDJSON Progress:** During batch uploads, `/api/enquiries/batch` streams live NDJSON events so each table row updates visibly in real-time (`"processing..."` → filled-in extracted data, or → `"extraction failed"` with a retry button).
+- **Explicit "Save Changes" Button & Unsaved Edits Protection:** Detail view features an explicit "Save Changes" button that activates the moment any field is modified, persisting all edits in one write and prompting an unsaved edits warning if the user attempts to navigate away or run re-extraction.
+- **Relational Enquiry History Log (`EnquiryHistoryEvent`):** Full audit trail tracking every manual field edit (`oldValue` → `newValue`), status transition, and AI re-extraction run with timestamp and protected field notes.
 - **LLM Extraction Pipeline:** Extracts company, contact name, contact email, service line, raw budget, normalized USD budget, timeline phrase, summary, genuine enquiry status, and extraction notes. Works with native Anthropic keys (`sk-ant-...`) and OpenRouter keys (`sk-or-v1-...`).
 - **Robust Fallback Stub:** When no API key is configured, a heuristic extraction stub runs seamlessly, logging a warning and returning plausible structured data without crashing.
 - **Deterministic Priority Engine:** Pure TypeScript scoring function evaluates priority (`high`, `medium`, `low`) based on budget size, urgency keywords, contact completeness, and prompt injection defense.
@@ -95,14 +97,14 @@ Here is a breakdown of key architectural decisions made on edge cases:
 ## Re-extraction
 
 ### How it works
-1. When a user clicks **Re-run Extraction**, the system fetches the untouched `rawText`.
-2. A JSON snapshot of the current state is stored in `previousExtraction` to ensure auditability and non-destructive operations.
-3. The LLM re-extracts structured fields.
-4. The system checks `humanEditedFields` (an array of field names edited by a human).
+1. **Explicit Save Button:** Manual edits made on the detail view are saved explicitly via the "Save Changes" button, updating the record in SQLite and tagging modified field names in `humanEditedFields`.
+2. **Re-Extraction Run:** When a user clicks **Re-run Extraction**, the system fetches the untouched `rawText` and runs a fresh LLM extraction.
+3. **Audit Snapshot:** A JSON snapshot of the state prior to re-extraction is saved in `previousExtraction`.
+4. **Edit Protection:** The system checks `humanEditedFields`:
    - For fields **not** in `humanEditedFields`, the database is updated with the new AI values.
    - For fields **in** `humanEditedFields`, the human's value is **preserved** on the record, while the new AI value is returned as `aiSuggestions`.
-5. The UI presents an **"Accept AI Suggestion"** button next to human-edited fields, allowing the user to inspect the AI suggestion and choose whether to adopt it.
-6. Priority is automatically re-computed based on the updated fields (unless priority itself was manually overridden by a human).
+5. **AI Suggestions & Audit Log:** The UI displays an **"Accept AI Suggestion"** button for human-edited fields, and every edit/re-extraction event is recorded in the **Enquiry Audit History Log** (`EnquiryHistoryEvent`).
+6. **Priority Re-scoring:** Priority is automatically re-computed based on the effective values (unless priority itself was manually overridden).
 
 ---
 
