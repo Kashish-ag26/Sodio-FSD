@@ -2,6 +2,17 @@ export type ServiceLine = 'ai' | 'blockchain' | 'web' | 'mobile' | 'game' | 'oth
 export type Priority = 'high' | 'medium' | 'low'
 export type Status = 'new' | 'contacted' | 'qualified' | 'dropped'
 
+export interface EnquiryHistoryEvent {
+  id: string
+  enquiryId: string
+  eventType: 'manual_edit' | 'status_change' | 're_extraction' | 'ingested' | string
+  fieldName?: string | null
+  oldValue?: string | null
+  newValue?: string | null
+  notes?: string | null
+  createdAt: string | Date
+}
+
 export interface ExtractionResult {
   company: string
   contactName: string
@@ -37,6 +48,7 @@ export interface Enquiry {
   lastExtractedAt?: string | Date | null
   createdAt: string | Date
   updatedAt: string | Date
+  historyEvents?: EnquiryHistoryEvent[]
 }
 
 export interface BatchItemResult {

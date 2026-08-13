@@ -32,14 +32,21 @@ function formatEnquiryRecord(record: any) {
   }
 }
 
-// GET /api/enquiries/[id]
+// GET /api/enquiries/[id] - Include history events ordered by newest first
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
     const { id } = params
-    const enquiry = await db.enquiry.findUnique({ where: { id } })
+    const enquiry = await db.enquiry.findUnique({
+      where: { id },
+      include: {
+        historyEvents: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    })
 
     if (!enquiry) {
       return NextResponse.json({ error: 'Enquiry not found' }, { status: 404 })
@@ -55,7 +62,7 @@ export async function GET(
   }
 }
 
-// PUT /api/enquiries/[id] - Update enquiry (Inline editing & Status transition)
+// PUT /api/enquiries/[id] - Save manual edits (bulk or single) & log History Events
 export async function PUT(
   request: Request,
   { params }: { params: { id: string } }
@@ -83,7 +90,6 @@ export async function PUT(
 
     const updatedEditedFields = new Set<string>(existingEditedFields)
 
-    // Check which editable fields were explicitly passed and changed
     const editableFields = [
       'company',
       'contactName',
@@ -96,24 +102,51 @@ export async function PUT(
       'isGenuineEnquiry',
       'priority',
       'status',
-      'extractionNotes'
+      'extractionNotes',
     ]
 
     const updateData: any = {}
+    const historyToCreate: {
+      eventType: string
+      fieldName?: string
+      oldValue?: string
+      newValue?: string
+      notes?: string
+    }[] = []
 
     for (const field of editableFields) {
       if (body[field] !== undefined) {
-        updateData[field] = body[field]
+        const oldValStr = String((existing as any)[field] ?? '')
+        const newValStr = String(body[field] ?? '')
 
-        // Mark as human edited if changed from current DB state
-        if (body[field] !== (existing as any)[field]) {
-          updatedEditedFields.add(field)
+        // Only process if value actually changed
+        if (oldValStr !== newValStr) {
+          updateData[field] = body[field]
+          
+          if (field === 'status') {
+            historyToCreate.push({
+              eventType: 'status_change',
+              fieldName: 'status',
+              oldValue: oldValStr,
+              newValue: newValStr,
+              notes: `Status transitioned from ${oldValStr} to ${newValStr}`,
+            })
+          } else {
+            updatedEditedFields.add(field)
+            historyToCreate.push({
+              eventType: 'manual_edit',
+              fieldName: field,
+              oldValue: oldValStr,
+              newValue: newValStr,
+              notes: `Field "${field}" updated by human operator`,
+            })
+          }
         }
       }
     }
 
-    // Re-score priority if relevant fields changed and human hasn't explicitly locked priority
-    if (!updatedEditedFields.has('priority')) {
+    // Re-score priority if relevant fields changed and human hasn't explicitly set priority
+    if (body.priority === undefined && !updatedEditedFields.has('priority')) {
       const mergedFields = {
         isGenuineEnquiry: updateData.isGenuineEnquiry ?? existing.isGenuineEnquiry,
         budgetNormalized: updateData.budgetNormalized ?? existing.budgetNormalized,
@@ -127,9 +160,30 @@ export async function PUT(
 
     updateData.humanEditedFields = JSON.stringify(Array.from(updatedEditedFields))
 
-    const updatedRecord = await db.enquiry.update({
-      where: { id },
-      data: updateData,
+    // Perform database update & batch history event creations
+    const updatedRecord = await db.$transaction(async (tx) => {
+      const updated = await tx.enquiry.update({
+        where: { id },
+        data: updateData,
+      })
+
+      if (historyToCreate.length > 0) {
+        await tx.enquiryHistoryEvent.createMany({
+          data: historyToCreate.map((item) => ({
+            enquiryId: id,
+            ...item,
+          })),
+        })
+      }
+
+      return tx.enquiry.findUnique({
+        where: { id },
+        include: {
+          historyEvents: {
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      })
     })
 
     return NextResponse.json(formatEnquiryRecord(updatedRecord))

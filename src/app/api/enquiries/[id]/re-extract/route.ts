@@ -33,7 +33,7 @@ function formatEnquiryRecord(record: any) {
   }
 }
 
-// POST /api/enquiries/[id]/re-extract - Re-run LLM extraction on an enquiry safely
+// POST /api/enquiries/[id]/re-extract - Re-run LLM extraction safely and log history event
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
@@ -95,8 +95,10 @@ export async function POST(
       extractionVersion: `v1.${Date.now()}`,
     }
 
-    // Track AI suggested values for human-edited fields so UI can offer "Accept New / Keep Mine"
+    // Track AI suggested values for human-edited fields so UI can offer "Accept AI Suggestion"
     const aiSuggestions: Record<string, any> = {}
+    const updatedAiFields: string[] = []
+    const protectedHumanFields: string[] = []
 
     for (const field of fieldsToExtract) {
       const newAiVal = (newExtraction as any)[field]
@@ -104,11 +106,12 @@ export async function POST(
       if (humanEditedFields.includes(field)) {
         // Human has edited this field - KEEP human value in DB!
         updateData[field] = (enquiry as any)[field]
-        // Store AI suggestion for UI comparison
         aiSuggestions[field] = newAiVal
+        protectedHumanFields.push(field)
       } else {
         // Untouched field - update freely with new AI extraction
         updateData[field] = newAiVal
+        updatedAiFields.push(field)
       }
     }
 
@@ -125,9 +128,36 @@ export async function POST(
       updateData.priority = computePriority(effectiveFields as any)
     }
 
-    const updatedRecord = await db.enquiry.update({
-      where: { id },
-      data: updateData,
+    const reExtractNotes = protectedHumanFields.length > 0
+      ? `Re-extraction complete. Updated ${updatedAiFields.length} field(s) via AI. Protected human-edited field(s): ${protectedHumanFields.join(', ')}.`
+      : `Re-extraction complete. Updated all structured fields via AI.`
+
+    // Update DB record and create history event atomically
+    const updatedRecord = await db.$transaction(async (tx) => {
+      await tx.enquiry.update({
+        where: { id },
+        data: updateData,
+      })
+
+      await tx.enquiryHistoryEvent.create({
+        data: {
+          enquiryId: id,
+          eventType: 're_extraction',
+          fieldName: null,
+          oldValue: null,
+          newValue: null,
+          notes: reExtractNotes,
+        },
+      })
+
+      return tx.enquiry.findUnique({
+        where: { id },
+        include: {
+          historyEvents: {
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      })
     })
 
     const formatted = formatEnquiryRecord(updatedRecord)

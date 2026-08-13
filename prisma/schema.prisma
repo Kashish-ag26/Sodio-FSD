@@ -36,4 +36,22 @@ model Enquiry {
 
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+
+  historyEvents      EnquiryHistoryEvent[]
+}
+
+model EnquiryHistoryEvent {
+  id          String   @id @default(cuid())
+  enquiryId   String
+  eventType   String   // manual_edit | status_change | re_extraction | ingested
+  fieldName   String?
+  oldValue    String?
+  newValue    String?
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  enquiry     Enquiry  @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+
+  @@index([enquiryId])
+  @@index([createdAt])
 }
