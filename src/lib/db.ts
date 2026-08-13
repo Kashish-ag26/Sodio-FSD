@@ -7,13 +7,23 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 function createPrismaClient(): PrismaClient {
-  const tursoUrl =
-    process.env.TURSO_DATABASE_URL ||
-    (process.env.DATABASE_URL?.startsWith('libsql://') ? process.env.DATABASE_URL : undefined)
+  const tursoUrl = process.env.TURSO_DATABASE_URL
   const authToken = process.env.TURSO_AUTH_TOKEN
 
-  if (tursoUrl) {
-    console.log(`[db.ts] Initializing PrismaClient with @prisma/adapter-libsql (Turso Cloud DB: ${tursoUrl})...`)
+  // If either Turso variable is present, attempt Turso connection with strict validation
+  if (tursoUrl || authToken) {
+    if (!tursoUrl || !tursoUrl.trim()) {
+      throw new Error(
+        '[db.ts] Missing TURSO_DATABASE_URL in process.env. Both TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are required for Turso integration.'
+      )
+    }
+    if (!authToken || !authToken.trim()) {
+      throw new Error(
+        '[db.ts] Missing TURSO_AUTH_TOKEN in process.env. Both TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are required for Turso integration.'
+      )
+    }
+
+    console.log(`[db.ts] Initializing PrismaClient with @prisma/adapter-libsql (Turso Cloud DB)...`)
     const libsql = createClient({
       url: tursoUrl,
       authToken: authToken,
@@ -23,6 +33,7 @@ function createPrismaClient(): PrismaClient {
   }
 
   // Fall back to standard local SQLite file for local development
+  console.log(`[db.ts] Initializing standard PrismaClient (Local SQLite DB)...`)
   return new PrismaClient()
 }
 
